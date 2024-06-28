@@ -3,40 +3,33 @@ name: asrw
 on:
   push:
     branches: [ "*" ]
-  pull_request:
-    branches: [ "*" ]
+    tags: [ "*" ]
 
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  test:
+    runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v4.1.6
-
-    - name: Set up Docker buildsx
-      uses: docker/setup-buildx-action@v3.3.0
-
-    - name: Cache Docker layers
-      uses: actions/cache@v4.0.2
-      with:
-        path: /tmp/.buildx-cache
-        key: ${{ runner.os }}-buildx-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-
 
     - name: Login to GitHub Container Registry
       run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-    - name: Convert repository name to lowercase
-      id: repo-name-lowercase
-      run: echo "REPO=$(echo "${{ github.repository }}" | awk '{print tolower($0)}')" >> $GITHUB_OUTPUT
+    - name: Install necessary tools
+      run: sudo apt-get update && sudo apt-get install -y wget default-jdk unzip
+    
+    - name: Install Nextflow
+      run: |
+        export NXF_VER=24.04.0-edge
+        wget -qO- https://get.nextflow.io | bash
+        chmod +x nextflow
+        mv nextflow /usr/local/bin
 
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5.3.0
-      with:
-        context: .
-        push: true
-        tags: ghcr.io/${{ steps.repo-name-lowercase.outputs.REPO }}:latest
-        cache-from: type=local,src=/tmp/.buildx-cache
-        cache-to: type=local,dest=/tmp/.buildx-cache
+    - name: Run test
+      run: |
+        nextflow run main.nf -c nextflow.config \
+        --samples_json tests/test_samples.json \
+        --popmap tests/popmap_test \
+        --parameter_max_val 4 \
+        --parameter_min_val 2
